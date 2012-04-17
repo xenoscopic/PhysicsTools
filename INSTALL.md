@@ -12,9 +12,13 @@ The tools have the following dependencies:
 Compiling
 ---------
 To compile, you must first generate the CMake build files.  From the source directory, do:
+
 $ mkdir build
+
 $ cd build
+
 $ cmake ..
+
 $ make
 
 You can now run the tools directly from the build directory, e.g.
