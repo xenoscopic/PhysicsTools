@@ -1,0 +1,24 @@
+#Require a CMake >= 2.6.4 (should be sufficient)
+CMAKE_MINIMUM_REQUIRED(VERSION 2.6.4)
+
+#Set the project name
+PROJECT(PhysicsTools)
+
+#Add custom cmake modules
+SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/CMakeExtras)
+
+#Find Boost
+SET(Boost_NO_BOOST_CMAKE TRUE)
+FIND_PACKAGE(Boost COMPONENTS program_options REQUIRED)
+INCLUDE_DIRECTORIES(${Boost_INCLUDE_DIR})
+
+#Find ROOT
+FIND_PACKAGE(ROOT REQUIRED)
+INCLUDE_DIRECTORIES(${ROOT_INCLUDE_DIR})
+
+#Create skimslim executable
+SET(SKIMSLIM_SOURCES skimslim.cpp)
+ADD_EXECUTABLE(skimslim ${SKIMSLIM_SOURCES})
+TARGET_LINK_LIBRARIES(skimslim
+						${Boost_PROGRAM_OPTIONS_LIBRARY}
+						${ROOT_LIBRARIES})
