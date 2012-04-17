@@ -42,6 +42,8 @@ po::variables_map parse_command_line_options(int argc, char * argv[])
 		("enable-branches,e", po::value< vector<string> >()->multitoken(), "Enable a branch (overrides branch disabling).")
 		("disable-branches,d", po::value< vector<string> >()->multitoken(), "Disable a branch.")
 		("disable-all-branches,D", "Disable all branches.")
+		("max-input-events,m", po::value<int>(), "Maximum number of input events to process (unlimited by default).")
+		("max-output-events,M", po::value<int>(), "Maximum number of output events to write (unlimited by default).")
 		("output,o", po::value<string>()->default_value("output.root"), "The output name for the ROOT data file.")
 		("replace,r", "Replace the output file if it already exists.")
 		("help,h", "Print a description of the program options.")
@@ -236,6 +238,32 @@ int main(int argc, char * argv[])
 	string input = options["input"].as<string>();
 	string container = options["container"].as<string>();
 	string output = options["output"].as<string>();
+	int max_input_events = -1;
+	if(options.count("max-input-events") > 0)
+	{
+		max_input_events = options["max-input-events"].as<int>();
+
+		//If the user has specified a value, make sure it is > 0.
+		//If we're using the default, it's fine to be < 0.
+		if(max_input_events <= 0)
+		{
+			cerr << "ERROR: Maximum input events must be > 0 to make sense" << endl;
+			return 1;
+		}
+	}
+	int max_output_events = -1;
+	if(options.count("max-output-events") > 0)
+	{
+		max_output_events = options["max-output-events"].as<int>();
+
+		//If the user has specified a value, make sure it is > 0.
+		//If we're using the default, it's fine to be < 0.
+		if(max_output_events <= 0)
+		{
+			cerr << "ERROR: Maximum output events must be > 0 to make sense" << endl;
+			return 1;
+		}
+	}
 	
 	//Print program information
 	if(verbose)
@@ -244,6 +272,14 @@ int main(int argc, char * argv[])
 		cout << "Input file: " << input << endl;
 		cout << "Input container: " << container << endl;
 		cout << "Output file: " << output << endl;
+		if(max_input_events >= 0)
+		{
+			cout << "Maximum input events: " << max_input_events << endl;
+		}
+		if(max_output_events >= 0)
+		{
+			cout << "Maximum output events: " << max_output_events << endl;
+		}
 	}
 	else
 	{
@@ -256,8 +292,42 @@ int main(int argc, char * argv[])
 	//Create the input tree (which may be a chain of trees)
 	TChain *old_tree = new TChain(container.c_str());
 
-	//Add the input paths
-	old_tree->Add(input.c_str());
+	//Add the input paths.  If we are using wildcarding, then
+	//we can just call Add with that value, though we need to
+	//verify that there were actually files attached, or ROOT
+	//will segfault.  It doesn't matter if those files
+	//actually contain the requested tree, ROOT will just
+	//ignore them if they don't, but it can't handle not
+	//finding any files.  If we aren't using wildcarding, i.e.
+	//if we are specifying a file, then we need to call Add
+	//with the second argument of 0 to check that that it 
+	//actually worked.  Note that if we do call Add with the
+	//second argument of 0 and it doesn't return the number
+	//of paths we gave it, then it will segfault later, so we
+	//really need to check here to make sure it is successful.
+	if(input.find("*") != string::npos)
+	{
+		//We are using wildcarding, so just add the file,
+		//but check that there are matches.
+		if(old_tree->Add(input.c_str()) == 0)
+		{
+			//Unable to open any input files
+			cerr << "ERROR: No input files matched the specification" << endl;
+
+			//Clean up and exit
+			delete old_tree;
+			return 1;
+		}
+	}
+	else if(old_tree->Add(input.c_str(), 0) != 1)
+	{
+		//Unable to open the file
+		cerr << "ERROR: Unable to open the input file (" << input << ") for reading." << endl;
+
+		//Clean up and exit
+		delete old_tree;
+		return 1;
+	}
 
 	//Create the output file
 	string output_options = replace ? "RECREATE" : "CREATE";
@@ -265,7 +335,7 @@ int main(int argc, char * argv[])
 	if(output_file == NULL)
 	{
 		//Unable to open the file
-		cerr << "ERROR: Unable to open the output file for writing." << endl;
+		cerr << "ERROR: Unable to open the output file (" << output << ") for writing." << endl;
 
 		//Clean up and exit
 		delete old_tree;
@@ -307,8 +377,13 @@ int main(int argc, char * argv[])
 	{
 		cout << "There are " << n_events << " entries." << endl;
 	}
+	if(max_input_events >= 0)
+	{
+		n_events = min(n_events, (Long64_t)max_input_events);
+	}
 
 	//Loop over the entries
+	int output_events = 0;
 	for(Long64_t i = 0; i < n_events; i++)
 	{
 		//Set the entry in the old_tree (this doesn't 
@@ -322,6 +397,10 @@ int main(int argc, char * argv[])
 		{
 			old_tree->GetEntry(i);
 			new_tree->Fill();
+			if(max_output_events >= 0 && ++output_events == max_output_events)
+			{
+				break;
+			}
 		}
 	}
 
